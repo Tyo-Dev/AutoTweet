@@ -21,33 +21,31 @@ export async function postTweet(text: string) {
         secret: (process.env.TWITTER_ACCESS_SECRET || '').trim(),
     };
 
-    // ATTEMPT 2: Try v1.1 Endpoint (Legacy) - Sometimes Free Tier works here if v2 is bugged
-    // Note: v1.1 uses query parameters or form-urlencoded body, simpler signature
-    const request_data = {
-        url: 'https://api.twitter.com/1.1/statuses/update.json',
-        method: 'POST',
-        data: { status: text },
+    const url = 'https://api.twitter.com/2/tweets';
+    const method = 'POST';
+
+    // For Twitter API v2 with JSON body, we do NOT include the body in the OAuth 1.0a signature.
+    // The signature is generated only based on the URL and Method (and query params, if any).
+    const request_data_for_signing = {
+        url: url,
+        method: method,
+        data: {}, // KEEP EMPTY for JSON body requests
     };
 
-    // For v1.1 Form URL Encoded, we MUST include data in signature
-    const headers = oauth.toHeader(oauth.authorize(request_data, token));
+    const headers = oauth.toHeader(oauth.authorize(request_data_for_signing, token));
 
-    // Convert data to URLSearchParams for body
-    const body = new URLSearchParams();
-    body.append('status', text);
-
-    const response = await fetch(request_data.url, {
-        method: request_data.method,
+    const response = await fetch(url, {
+        method: method,
         headers: {
             ...headers,
-            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Type': 'application/json',
         },
-        body: body.toString(),
+        body: JSON.stringify({ text: text }),
     });
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Twitter API (Fetch v1.1) Failed: ${response.status} ${response.statusText} - ${errorText}`);
+        throw new Error(`Twitter API v2 Failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     return await response.json();
