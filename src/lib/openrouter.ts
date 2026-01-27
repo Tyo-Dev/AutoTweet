@@ -20,7 +20,7 @@ const MODELS = [
 ];
 
 // Google Gemini Direct Fallback
-async function generateWithGeminiFallback(topic: string, specificPreferences?: string): Promise<{ tweet: string; explanation: string }> {
+async function generateWithGeminiFallback(topic: string, specificPreferences?: string): Promise<string> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
         throw new Error('GEMINI_API_KEY not found');
@@ -29,30 +29,17 @@ async function generateWithGeminiFallback(topic: string, specificPreferences?: s
     console.log('Attempting generation with Gemini Direct API (Fallback)...');
 
     const prompt = `You are an expert social media manager specializing in X (Twitter).
-Your task is to craft high-impact, engaging tweets based on the user's input, AND provide a deep strategic explanation.
+Your task is to craft high-impact, engaging tweets based on the user's input.
 
 Topic: ${topic}
 ${specificPreferences ? `Preferences: ${specificPreferences}` : ''}
 
-RESPONSE FORMAT:
-You MUST return a valid JSON object with exactly these two keys:
-{
-  "tweet": "The actual tweet content (under 280 chars)",
-  "explanation": "A detailed explanation of why you wrote it this way, the context you assumed, and the strategy used."
-}
-DO NOT wrap the result in markdown code blocks. Just return the raw JSON string.
-
-Guidelines for Tweet:
+Guidelines:
 - **Length**: Strictly under 280 characters.
 - **Style**: Dynamic, professional yet accessible, potentially viral.
 - **Structure**: Hook -> Value/Point -> Call to Action (if appropriate).
 - **Hashtags**: Include 1-3 relevant, high-traffic hashtags.
-
-Guidelines for Explanation:
-- Explain the choice of words, tone, and structure.
-- Describe the target audience and expected engagement.
-- Provide context on why this angle works for the given topic.
-- Be verbose and educational (give a solid, insightful logic).`;
+- **Response**: Return ONLY the tweet text. Do not include quotes, explanations, or conversational filler.`;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
@@ -75,28 +62,10 @@ Guidelines for Explanation:
 
     if (!content) throw new Error('No content from Gemini');
 
-    try {
-        const cleanContent = content.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
-        const parsed = JSON.parse(cleanContent);
-        return {
-            tweet: parsed.tweet || cleanContent,
-            explanation: parsed.explanation || "No explanation provided."
-        };
-    } catch (e: any) {
-        // Try loose matching
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            return {
-                tweet: parsed.tweet || content,
-                explanation: parsed.explanation || "No explanation provided."
-            };
-        }
-        throw new Error('Failed to parse Gemini JSON');
-    }
+    return content.trim();
 }
 
-export async function generateTweet(topic: string, specificPreferences?: string): Promise<{ tweet: string; explanation: string }> {
+export async function generateTweet(topic: string, specificPreferences?: string): Promise<string> {
     let lastError = null;
 
     // 1. Try OpenRouter Models
@@ -110,28 +79,14 @@ export async function generateTweet(topic: string, specificPreferences?: string)
                     {
                         role: 'system',
                         content: `You are an expert social media manager specializing in X (Twitter).
-Your task is to craft high-impact, engaging tweets based on the user's input, AND provide a deep strategic explanation.
+Your task is to craft high-impact, engaging tweets based on the user's input.
 
-RESPONSE FORMAT:
-You MUST return a valid JSON object with exactly these two keys:
-{
-  "tweet": "The actual tweet content (under 280 chars)",
-  "explanation": "A detailed explanation of why you wrote it this way, the context you assumed, and the strategy used."
-}
-DO NOT wrap the result in markdown code blocks like \`\`\`json. Just return the raw JSON string.
-
-Guidelines for Tweet:
+Guidelines:
 - **Length**: Strictly under 280 characters.
 - **Style**: Dynamic, professional yet accessible, potentially viral.
 - **Structure**: Hook -> Value/Point -> Call to Action (if appropriate).
 - **Hashtags**: Include 1-3 relevant, high-traffic hashtags.
-
-Guidelines for Explanation:
-- Explain the choice of words, tone, and structure.
-- Describe the target audience and expected engagement.
-- Provide context on why this angle works for the given topic.
-- Be verbose and educational (give a solid, insightful logic).
-`
+- **Response**: Return ONLY the tweet text. Do not include quotes, explanations, or conversational filler.`
                     },
                     {
                         role: 'user',
@@ -145,27 +100,7 @@ Guidelines for Explanation:
             const content = completion.choices[0].message.content?.trim();
             if (!content) throw new Error('No content received');
 
-            try {
-                // Remove any potential markdown wiring before parsing
-                const cleanContent = content.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
-                const parsed = JSON.parse(cleanContent);
-                return {
-                    tweet: parsed.tweet || content,
-                    explanation: parsed.explanation || "No explanation provided."
-                };
-            } catch (e) {
-                // Try loose matching if strict parsing fails
-                const jsonMatch = content.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    const parsed = JSON.parse(jsonMatch[0]);
-                    return {
-                        tweet: parsed.tweet || content,
-                        explanation: parsed.explanation || "No explanation provided."
-                    };
-                }
-
-                throw new Error('Failed to parse JSON response');
-            }
+            return content.replace(/^"|"$/g, ''); // Simple cleanup
 
         } catch (error: any) {
             console.warn(`Model ${model} failed:`, error.message || error);
@@ -190,18 +125,9 @@ Guidelines for Explanation:
     console.log('Falling back to dummy data...');
 
     const mockTweets = [
-        {
-            tweet: `[DUMMY] AI agents are transforming the future! 🤖✨ Input: "${topic}". Imagine automated workflows that save hours. #AI #FutureOfWork`,
-            explanation: "This tweet leverages the trending topic of AI agents to create immediate interest. The hook 'transforming the future' appeals to forward-thinking tech enthusiasts. The use of emojis adds visual appeal, and the hashtags target the relevant communities for maximum visibility."
-        },
-        {
-            tweet: `[DUMMY] Just explored "${topic}" and it's mind-blowing. 🚀 The tech landscape is shifting rapidly. Are you ready? #Tech #Innovation`,
-            explanation: "This tweet uses a personal discovery angle ('Just explored') to make the content relatable. The question 'Are you ready?' creates a sense of FOMO (Fear Of Missing Out), encouraging engagement and clicks."
-        },
-        {
-            tweet: `[DUMMY] Why is everyone talking about "${topic}"? Because it's a game changer. 💡 Don't get left behind! #Trends #Growth`,
-            explanation: "This tweet uses a question-answer format to immediately provide value. It positions the topic as 'everyone is talking about it', which serves as social proof. The phrase 'game changer' reinforces its importance."
-        }
+        `[DUMMY] AI agents are transforming the future! 🤖✨ Input: "${topic}". Imagine automated workflows that save hours. #AI #FutureOfWork`,
+        `[DUMMY] Just explored "${topic}" and it's mind-blowing. 🚀 The tech landscape is shifting rapidly. Are you ready? #Tech #Innovation`,
+        `[DUMMY] Why is everyone talking about "${topic}"? Because it's a game changer. 💡 Don't get left behind! #Trends #Growth`
     ];
 
     // Return a random dummy tweet
