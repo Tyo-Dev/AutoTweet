@@ -12,9 +12,9 @@ export async function POST(request: Request) {
             );
         }
 
-        const { tweet, explanation } = await generateTweet(topic, preferences);
+        const tweet = await generateTweet(topic, preferences);
 
-        return NextResponse.json({ tweet, explanation });
+        return NextResponse.json({ tweet });
     } catch (error) {
         console.error('API Error:', error);
         return NextResponse.json(
