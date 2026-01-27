@@ -12,7 +12,7 @@ const openai = new OpenAI({
 export async function generateTweet(topic: string, specificPreferences?: string): Promise<{ tweet: string; explanation: string }> {
     try {
         const completion = await openai.chat.completions.create({
-            model: 'meta-llama/llama-3-8b-instruct:free',
+            model: 'google/gemini-2.0-flash-exp:free',
             messages: [
                 {
                     role: 'system',
