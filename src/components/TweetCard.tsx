@@ -7,13 +7,12 @@ import { toast } from 'sonner';
 
 interface TweetCardProps {
     content: string;
-    explanation?: string;
     onUpdate: (newContent: string) => void;
     onPost: () => void;
     isPosting: boolean;
 }
 
-export default function TweetCard({ content, explanation, onUpdate, onPost, isPosting }: TweetCardProps) {
+export default function TweetCard({ content, onUpdate, onPost, isPosting }: TweetCardProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [editedContent, setEditedContent] = useState(content);
 
@@ -96,21 +95,6 @@ export default function TweetCard({ content, explanation, onUpdate, onPost, isPo
                         {editedContent.length} / 280
                     </div>
                 </div>
-
-                {/* AI Explanation Section */}
-                {explanation && (
-                    <div className="mt-6 pt-6 border-t border-white/10">
-                        <div className="flex items-center gap-2 mb-3">
-                            <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-300">
-                                <span className="text-xs">✨</span>
-                            </div>
-                            <h3 className="text-sm font-semibold text-purple-200">AI Strategy Insight</h3>
-                        </div>
-                        <p className="text-white/60 text-sm leading-relaxed italic bg-white/5 p-4 rounded-xl border border-white/5">
-                            "{explanation}"
-                        </p>
-                    </div>
-                )}
 
                 <div className="mt-6 flex justify-end">
                     <button
