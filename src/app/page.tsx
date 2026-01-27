@@ -10,6 +10,7 @@ export default function Home() {
     const [topic, setTopic] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedTweet, setGeneratedTweet] = useState('');
+    const [explanation, setExplanation] = useState('');
     const [isPosting, setIsPosting] = useState(false);
 
     // Handle Generate
@@ -19,6 +20,7 @@ export default function Home() {
 
         setIsGenerating(true);
         setGeneratedTweet(''); // Reset previous
+        setExplanation('');
 
         try {
             const response = await fetch('/api/generate', {
@@ -32,6 +34,7 @@ export default function Home() {
             if (!response.ok) throw new Error(data.error || 'Generation failed');
 
             setGeneratedTweet(data.tweet);
+            setExplanation(data.explanation);
         } catch (error: any) {
             toast.error(error.message);
         } finally {
@@ -58,6 +61,7 @@ export default function Home() {
             toast.success('Successfully posted to X!');
             setTopic('');
             setGeneratedTweet('');
+            setExplanation('');
         } catch (error: any) {
             toast.error(error.message);
         } finally {
@@ -141,6 +145,7 @@ export default function Home() {
                         <TweetCard
                             key="tweet-card"
                             content={generatedTweet}
+                            explanation={explanation}
                             onUpdate={setGeneratedTweet}
                             onPost={handlePost}
                             isPosting={isPosting}
