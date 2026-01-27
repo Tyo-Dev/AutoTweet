@@ -4,27 +4,43 @@ const openai = new OpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
     apiKey: process.env.OPENROUTER_API_KEY,
     defaultHeaders: {
-        'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL,
+        'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
         'X-Title': 'AutoTweet-X',
     },
 });
 
+// List of free models to try in order of preference/capability
+const MODELS = [
+    'google/gemini-2.0-flash-exp:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'mistralai/mistral-7b-instruct:free',
+    'openchat/openchat-7:free',
+    'qwen/qwen-2.5-72b-instruct:free', // High capability back up
+    'microsoft/phi-3-medium-128k-instruct:free'
+];
+
 export async function generateTweet(topic: string, specificPreferences?: string): Promise<{ tweet: string; explanation: string }> {
-    try {
-        const completion = await openai.chat.completions.create({
-            model: 'google/gemini-2.0-flash-exp:free',
-            messages: [
-                {
-                    role: 'system',
-                    content: `You are an expert social media manager specializing in X (Twitter).
+    let lastError = null;
+
+    for (const model of MODELS) {
+        try {
+            console.log(`Attempting generation with model: ${model}`);
+
+            const completion = await openai.chat.completions.create({
+                model: model,
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are an expert social media manager specializing in X (Twitter).
 Your task is to craft high-impact, engaging tweets based on the user's input, AND provide a deep strategic explanation.
 
 RESPONSE FORMAT:
-You must return a valid JSON object with exactly these two keys:
+You MUST return a valid JSON object with exactly these two keys:
 {
   "tweet": "The actual tweet content (under 280 chars)",
   "explanation": "A detailed explanation of why you wrote it this way, the context you assumed, and the strategy used."
 }
+DO NOT wrap the result in markdown code blocks like \`\`\`json. Just return the raw JSON string.
 
 Guidelines for Tweet:
 - **Length**: Strictly under 280 characters.
@@ -38,55 +54,70 @@ Guidelines for Explanation:
 - Provide context on why this angle works for the given topic.
 - Be verbose and educational (give a solid, insightful logic).
 `
-                },
-                {
-                    role: 'user',
-                    content: `Topic: ${topic}\n${specificPreferences ? `Preferences: ${specificPreferences}` : ''}`
+                    },
+                    {
+                        role: 'user',
+                        content: `Topic: ${topic}\n${specificPreferences ? `Preferences: ${specificPreferences}` : ''}`
+                    }
+                ],
+                temperature: 0.8,
+                // Removed strict response_format as it causes 400s on some free models
+            });
+
+            const content = completion.choices[0].message.content?.trim();
+            if (!content) throw new Error('No content received');
+
+            try {
+                // Remove any potential markdown wiring before parsing
+                const cleanContent = content.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
+                const parsed = JSON.parse(cleanContent);
+                return {
+                    tweet: parsed.tweet || content,
+                    explanation: parsed.explanation || "No explanation provided."
+                };
+            } catch (e) {
+                // Try loose matching if strict parsing fails
+                const jsonMatch = content.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    return {
+                        tweet: parsed.tweet || content,
+                        explanation: parsed.explanation || "No explanation provided."
+                    };
                 }
-            ],
-            temperature: 0.8,
-            response_format: { type: "json_object" }
-        });
 
-        const content = completion.choices[0].message.content?.trim();
-        if (!content) throw new Error('No content received');
-
-        try {
-            const parsed = JSON.parse(content);
-            return {
-                tweet: parsed.tweet || content,
-                explanation: parsed.explanation || "No explanation provided."
-            };
-        } catch (e) {
-            // Fallback if JSON parsing fails but content exists
-            return {
-                tweet: content,
-                explanation: "Could not parse AI explanation. "
-            };
-        }
-
-    } catch (error: any) {
-        console.error('OpenRouter Generation Error:', error);
-
-        // Error Handling: Fallback to Mock Data
-        console.log('Falling back to dummy data...');
-
-        const mockTweets = [
-            {
-                tweet: `[DUMMY] AI agents are transforming the future! 🤖✨ Input: "${topic}". Imagine automated workflows that save hours. #AI #FutureOfWork`,
-                explanation: "This tweet leverages the trending topic of AI agents to create immediate interest. The hook 'transforming the future' appeals to forward-thinking tech enthusiasts. The use of emojis adds visual appeal, and the hashtags target the relevant communities for maximum visibility."
-            },
-            {
-                tweet: `[DUMMY] Just explored "${topic}" and it's mind-blowing. 🚀 The tech landscape is shifting rapidly. Are you ready? #Tech #Innovation`,
-                explanation: "This tweet uses a personal discovery angle ('Just explored') to make the content relatable. The question 'Are you ready?' creates a sense of FOMO (Fear Of Missing Out), encouraging engagement and clicks."
-            },
-            {
-                tweet: `[DUMMY] Why is everyone talking about "${topic}"? Because it's a game changer. 💡 Don't get left behind! #Trends #Growth`,
-                explanation: "This tweet uses a question-answer format to immediately provide value. It positions the topic as 'everyone is talking about it', which serves as social proof. The phrase 'game changer' reinforces its importance."
+                throw new Error('Failed to parse JSON response');
             }
-        ];
 
-        // Return a random dummy tweet
-        return mockTweets[Math.floor(Math.random() * mockTweets.length)];
+        } catch (error: any) {
+            console.warn(`Model ${model} failed:`, error.message || error);
+            if (error?.response) {
+                console.warn(`Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data)}`);
+            }
+            lastError = error;
+            // Continue to next model
+        }
     }
+
+    // If we reach here, all models failed
+    console.error('All models failed. Last error:', lastError);
+    console.log('Falling back to dummy data...');
+
+    const mockTweets = [
+        {
+            tweet: `[DUMMY] AI agents are transforming the future! 🤖✨ Input: "${topic}". Imagine automated workflows that save hours. #AI #FutureOfWork`,
+            explanation: "This tweet leverages the trending topic of AI agents to create immediate interest. The hook 'transforming the future' appeals to forward-thinking tech enthusiasts. The use of emojis adds visual appeal, and the hashtags target the relevant communities for maximum visibility."
+        },
+        {
+            tweet: `[DUMMY] Just explored "${topic}" and it's mind-blowing. 🚀 The tech landscape is shifting rapidly. Are you ready? #Tech #Innovation`,
+            explanation: "This tweet uses a personal discovery angle ('Just explored') to make the content relatable. The question 'Are you ready?' creates a sense of FOMO (Fear Of Missing Out), encouraging engagement and clicks."
+        },
+        {
+            tweet: `[DUMMY] Why is everyone talking about "${topic}"? Because it's a game changer. 💡 Don't get left behind! #Trends #Growth`,
+            explanation: "This tweet uses a question-answer format to immediately provide value. It positions the topic as 'everyone is talking about it', which serves as social proof. The phrase 'game changer' reinforces its importance."
+        }
+    ];
+
+    // Return a random dummy tweet
+    return mockTweets[Math.floor(Math.random() * mockTweets.length)];
 }
